@@ -1,0 +1,14 @@
+.draft-card {
+    background-color:aqua;
+    margin-bottom: '10px';
+    width: '150px';
+    height: '100px';
+}
+
+.two-wrap {
+    display: -webkit-box; /* Required for two lines of text */
+    -webkit-box-orient: vertical; /* Arrange the text vertically */
+    overflow: hidden;
+    text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+    -webkit-line-clamp: 2; /* Limit the content to two lines */
+  }
