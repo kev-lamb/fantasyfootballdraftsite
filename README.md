@@ -18,5 +18,5 @@ primary key = draft_id, secondary key = player_id, additional rows: (adp, positi
 # Amazon S3: 
 folders named by draft_id contain 2 json files: 1. Rosters of each team, 2. List of all unrostered players (this second file might not be needed, definitely not a priority to implement)
 
-# AWS Lambda: 
-during drafts, the express backend will communicate the lambda endpoints to request a CPU selection as well as to inform about human selections. These endpoints will interact directly with the RDS instance.
+# AWS Lambda (MAYBE): 
+during drafts, the express backend will communicate the lambda endpoints to request a CPU selection as well as to inform about human selections. These endpoints will interact directly with the RDS instance. At the moment, im actually unsure if I will need to use AWS Lambda. I'll have a better Idea once I work through the control flow for drafts using web sockets since working on that has made me realize I'm going to have to maintain/access a decent amount of draft state information directly on the server anyways
