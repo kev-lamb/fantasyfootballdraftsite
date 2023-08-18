@@ -32,7 +32,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // TODO: change origin to env variable for deployment
 app.use(
     cors({
-      origin: "http://localhost:3000"
+      origin: "http://localhost:3000",
+      credentials: true,
   }));
 
 app.use('/', indexRouter);

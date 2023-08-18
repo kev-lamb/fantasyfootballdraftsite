@@ -19,7 +19,7 @@ function Draft({teams, rounds}) {
     const [nextPick, setNextPick] = useState(-1);
     const [players, setPlayers] = useState([initialSelection]);
     const [selection, setSelection] = useState(initialSelection);
-    const [test, setTest] = useState(1);
+    const [userTeam, setUserTeam] = useState(null);
 
     // fetch list of players on page load
     useEffect(() => {
@@ -75,6 +75,12 @@ function Draft({teams, rounds}) {
 
     }
 
+    const teamOnClock = (pick) => {
+        let round = Math.floor(pick/teams);
+        let team = round % 2 == 0 ? pick % teams : teams - (pick % teams) - 1;
+        return team;
+    };
+
     useEffect(() => {
         console.log('just made next pick into: ')
         console.log(nextPick)
@@ -82,63 +88,112 @@ function Draft({teams, rounds}) {
         //calculate which round/team is making the selection that just incremented the count
         if (nextPick != -1) {
 
-        let round = Math.floor(nextPick/teams);
-        let team = round % 2 == 0 ? nextPick % teams : teams - (nextPick % teams) - 1;
+            let round = Math.floor(nextPick/teams);
+            let team = round % 2 == 0 ? nextPick % teams : teams - (nextPick % teams) - 1;
 
-        //push new selection to the draft board
-        const newBoard = [...rosters];
-        newBoard[team] = [...newBoard[team]];
-        newBoard[team][round] = {name: selection.fullName, position: selection.defaultPositionId};
-        setRosters(newBoard)
+            //push new selection to the draft board
+            const newBoard = [...rosters];
+            newBoard[team] = [...newBoard[team]];
+            newBoard[team][round] = {name: selection.fullName, position: selection.defaultPositionId};
+            setRosters(newBoard);
         }
         
 
     }, [nextPick]);
 
-    // const playerCols = [
-    //     { title: 'Name', dataIndex: 'fullName', key: 'fullName',fixed:'left' },
-    //     { title: 'Position', dataIndex: 'defaultPositionId', key: 'defaultPositionId', width:150 },
-    //     { title: 'ADP', dataIndex: ['ownership', 'averageDraftPosition'], key:['ownership', 'averageDraftPosition'], width:150},
-    //     { title: 'Team', dataIndex: 'proTeamId', key: 'proTeamId', width:150},
-    //     {title: 'Draft', dataIndex:'draft', key:'draft', fixed:'right', render: draftBoy},
-    //   ];
+    const draftNotOver = () => {
+        return nextPick < teams * rounds;
+    }
 
-    //   function draftBoy(text, record, index) {
-    //     // console.log(text);
-    //     // console.log(record);
-    //     // console.log(index);
-    //     return (
-    //         <Button onClick={(e)=>executePick(e, record)}>Draft</Button>
-    //     )
-    // };
+    const startDraft = () => {
+        //if CPU is on clock, fetch selection from api
+        while (draftNotOver()) {
+            //if CPU is on clock, fetch selection from api
 
-    // const executePick = (e, record) => {
-    //     e.preventDefault();
-    //     console.log('draft player:');
-    //     console.log(record)
-    //     draftPlayer(record);
-    // }
+        }
+    };
+
+    /*
+    Draft control flow
+    Draft state should increment 'nextPick' when the value of 'selection' has changed.
+
+    If the current team 'on the clock' is a user controlled team, we wait for the user to click
+    the draft button on an available player, which changes the value of selection and executes
+    the 'draftPlayer' logic.
+
+    If the current team 'on the clock' is a CPU, send a get request to the API for the next pick
+    in the draft
+
+    It seems like the changing of the value 'nextPick' is what should trigger this behavior, so
+    I think it makes the most sense to handle this in a useEffect when 'nextPick' encounters a 
+    state change.
+
+    The only problem is right now, changing the value of selection is what triggers a state change
+    for 'nextPick'. I think what I can do is within the useEffect, check for what the team after
+    the one that just selected is, and make an async fucntion call that sets selection.
+
+    To implement this, we have to either send the entire list of available players in our request
+    OR maintain the list of available players in the backend as the draft progresses. I think
+    maintaining this in the backend is more scalable and sending that list over feels like itd be slow,
+    but sending the list over is easier to implement so ill try that first.
+
+    the players list is actually to large to send in the body of the post request, so we need to come
+    up with a mock storage solution now
+    */
+
+    /*
+    Think i need to handle the cpu selection stuff on roster state change instead of pick number actually
+    cuz I want to send updated roster info to server and async state change wont have happened yet if i handle
+    it w pick number change. Thisll matter for CPUs picking at the turn
+    */
+    useEffect(() => {
+        const requestCPUPick = async (team, roster) => {
+
+            let info = {
+                available: 'hehehe', // players.filter(player => !player.hasOwnProperty('drafted') || !player.drafted),
+                team: team,
+                roster: roster
+            };
+
+            let url = new URL(`${API_URL}/draft`);
+            fetch(url, {
+                method: 'POST',
+                credentials: "include",
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(info)
+            }).then(res => res.json())
+            .then(res => {
+                console.log(res);
+            })
+        }
+
+        //check if the next team to draft is a user team or a CPU
+        let otc = teamOnClock(nextPick+1);
+        if (otc != userTeam) {
+            //CPU picking, send request
+            requestCPUPick(otc, rosters[otc]);
+
+        }
+
+    }, [rosters])
 
 
     return (
         <div style={{display:'flex', flexDirection:'column', height:'100vh'}}>
-            <DraftBoard teams={teams} rounds={rounds} rosters={rosters} setRoster={setRosters} style={{flex:60}}/>
+            <Button onClick={(e) => startDraft()}>Start Draft</Button>
+            <DraftBoard 
+                teams={teams}
+                rounds={rounds}
+                rosters={rosters}
+                setRoster={setRosters}
+                userTeam={userTeam}
+                setUserTeam={setUserTeam}
+                style={{flex:60}}
+            />
             <Players draftPlayer={draftPlayer} players={players} style={{flex:40}}/>
         </div>
-        // <Players draftPlayer={draftPlayer} players={players}/>
-        // <div style={{height:'600px', overflowY:'auto'}}>
-        //     <Table
-        //             dataSource={players}
-        //             columns={playerCols}
-        //             pagination={false}
-        //             scroll={{y:400}}
-        //             rowKey={(record) => record.id}
-        //         />
-        // </div>
-        // <div>
-        //     <Button onClick={(e)=>{setTest(test+1)}}>{test}</Button>
-        //     <Test data={players} draftPlayer={draftPlayer}/>
-        // </div>
     )
 }
 

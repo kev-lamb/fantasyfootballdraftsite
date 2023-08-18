@@ -11,6 +11,7 @@ import {React, useRef, useState, useEffect} from 'react';
 import DraftCard from './Draftcard';
 import './styles/Draftboard.css';
 import Table from 'react-bootstrap/Table';
+import Button from 'react-bootstrap/Button';
 
 /**
  * reorients 2d array of team rosters to be an array of
@@ -31,12 +32,13 @@ const rosterConstruction = (teams) => {
 };
 
 
-function DraftBoard({teams, rounds, rosters, setRosters}) {
+function DraftBoard({teams, rounds, rosters, setRosters, userTeam, setUserTeam}) {
 
     //maintains roster information
     // const [rosters, setRosters] = useState(Array.from({ length: teams }, () => Array.from({length: rounds}, () => 'jeff')));
     const [nextPick, setNextPick] = useState(1);
     const [teamNames, setTeamNames] = useState(Array.from({ length: teams }, (_, index) => `Team ${index + 1}`));
+    // const [userTeam, setUserTeam] = useState(null);
 
 
     const addToDraftBoard = (player) => {
@@ -59,7 +61,9 @@ function DraftBoard({teams, rounds, rosters, setRosters}) {
                 {
                     teamNames.map((name, i) => (
                         <th>
-                            {name}
+                        <Button onClick={(e) => setUserTeam(i)}>
+                            {userTeam == i ? 'USER' : 'Claim'} {name}
+                        </Button>
                         </th>
                     ))
                 }

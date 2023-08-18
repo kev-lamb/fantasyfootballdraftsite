@@ -17,4 +17,14 @@ router.get('/espnadp', async (req, res) => {
     res.status(200).json(available);
 })
 
+router.post('/draft', (req, res) => {
+    let available = req.body.available;
+    let team = req.body.team;
+    let roster = req.body.roster;
+    console.log(available);
+    console.log(team);
+    console.log(roster);
+    res.status(200).json({message: 'connected'});
+})
+
 module.exports = router;

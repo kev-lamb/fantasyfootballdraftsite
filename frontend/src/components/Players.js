@@ -70,6 +70,10 @@ function Players({draftPlayer, players, nextPick}) {
     //     {title: 'Draft', dataIndex:'draft', key:'draft', fixed:'right', render: draftBoy},
     //   ];
 
+    /*
+    TODO: make the table so that by default it only displays undrafted players
+    */
+
     return (
         <div id="papi">
         <Accordion defaultActiveKey="0">
