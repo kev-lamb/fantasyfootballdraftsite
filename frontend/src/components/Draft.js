@@ -5,6 +5,8 @@ import {API_URL} from '../config';
 import Button from 'react-bootstrap/Button';
 import {Table} from 'antd';
 import Test from './Test';
+import io from 'socket.io-client';
+import {socket} from '../socket';
 
 const initialSelection = {
     fullName: 'N/A',
@@ -20,6 +22,11 @@ function Draft({teams, rounds}) {
     const [players, setPlayers] = useState([initialSelection]);
     const [selection, setSelection] = useState(initialSelection);
     const [userTeam, setUserTeam] = useState(null);
+    const [isConnected, setIsConnected] = useState(false);
+
+    // let socket = io(`http://localhost:8000`);
+    // socket.emit('test', {data: 'lol'});
+    // console.log("bubbles");
 
     // fetch list of players on page load
     useEffect(() => {
@@ -106,12 +113,63 @@ function Draft({teams, rounds}) {
     }
 
     const startDraft = () => {
-        //if CPU is on clock, fetch selection from api
-        while (draftNotOver()) {
-            //if CPU is on clock, fetch selection from api
+        //tell the server to start making picks for the bots
+        socket.emit('start-draft', {draftId: 1})
+    }
 
+    const establishConnection = () => {
+        //if CPU is on clock, fetch selection from api
+        // while (draftNotOver()) {
+        //     //if CPU is on clock, fetch selection from api
+
+        // }
+        if (userTeam == null) {
+            //should never hit this if its setup right, this fxn should only
+            //be triggerable after user team has been set
+            console.log("cant start draft without selecting a team first");
+            return;
         }
+
+        //user has selected a team, establish socket connection
+        console.log(userTeam);
+        socket.auth = {
+            draftPosition: userTeam,
+            draftId: 1,
+            userId: "Kevin",
+            teamCount: teams, 
+            rounds: rounds
+        };
+        socket.connect();
+        socket.on('connect', () => {
+            console.log('socket connection successful');
+            setIsConnected(true);
+        })
+        socket.on('selection', (data) => {
+            console.log(`${data.selection} was selected in draft ${data.draftId}`);
+        })
+
+        socket.on('on-the-clock', (data) => {
+            console.log("this user is next up in the draft");
+        })
     };
+
+    const disconnect = () => {
+        socket.off('connect');
+        socket.off('selection');
+        socket.off('on-the-clock');
+        socket.disconnect();
+        setIsConnected(false);
+        console.log("disconnected");
+    }
+
+    const selectTeam = (i) => {
+        socket.auth = {draftPosition: i};
+        socket.connect();
+        socket.on('connect', () => {
+            console.log('socket connection successful');
+        });
+        setUserTeam(i);
+    }
 
     /*
     Draft control flow
@@ -182,7 +240,18 @@ function Draft({teams, rounds}) {
 
     return (
         <div style={{display:'flex', flexDirection:'column', height:'100vh'}}>
-            <Button onClick={(e) => startDraft()}>Start Draft</Button>
+            <Button 
+            onClick={isConnected ? (e) => disconnect() : (e) => establishConnection()}
+            disabled={userTeam == null}
+            >
+                    {isConnected ? "Disconnect" : "Connect"}
+            </Button>
+            <Button 
+            onClick={(e) => startDraft()}
+            disabled={!isConnected}
+            >
+                Start Draft
+            </Button>
             <DraftBoard 
                 teams={teams}
                 rounds={rounds}

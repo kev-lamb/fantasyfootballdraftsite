@@ -14,8 +14,19 @@ var session = require('express-session');
 
 var app = express();
 
+// TODO: change origin to env variable for deployment
+app.use(
+    cors({
+      origin: "http://localhost:3000",
+      credentials: true,
+  }));
+
 var http = require('http').Server(app);
-var io = require('socket.io')(http);
+var io = require('socket.io')(http, {
+    cors: {
+      origin: "http://localhost:3000",
+    },
+  });
 
 /*
 TODO: once this is all said and done, the draft objects are going to be stored server-side.
@@ -56,41 +67,54 @@ of complication.
 var draftLobbies = {};
 var connections = {};
 
-function initializeDraftLobby(req) {
+function initializeDraftLobby(data) {
     //TODO: make this state actually meaningful
-    draftLobbies[req.lobby] = {
-        users: [req.userid],
-        order: []
+    draftLobbies[data.draftId] = {
+        users: [data.userId],
+        order: Array.from({ length: data.teamCount }, (_, index) => index == data.draftPosition ? data.userId : `CPU`),
+        onClock: 0
     };
+
+    //TODO: create new room here? or return draftid so I can create room elsewhere
+    console.log(draftLobbies[data.draftId]);
+    return data.draftId;
 }
 
-function addDrafterToLobby(req) {
+function addDrafterToLobby(data) {
     //TODO: make this actually do something right
-    draftLobbies[req.lobby][users].append(req.userid);
+    draftLobbies[data.draftId]['users'].append(data.userId);
+    draftLobbies[data.draftId][order][data.draftPosition] = data.userId;
 }
 
-function handleNewLobbyConnection(req) {
-    let lobby = req.lobby;
+function handleNewLobbyConnection(data) {
+    let lobby = data.draftId;
     if (draftLobbies.hasOwnProperty(lobby)) {
         //lobby already exists
-        addDrafterToLobby(req)
+        addDrafterToLobby(data)
     } else {
         // new draft lobby
-        initializeDraftLobby(req);
+        initializeDraftLobby(data);
     }
 }
 
 function retrieveLobby(lobbyid) {
+    console.log(`retrieving draft with id ${lobbyid}`);
+    console.log(draftLobbies[lobbyid]);
     return draftLobbies[lobbyid];
+}
+
+async function cpuselection(draftid) {
+    return "TODO: implement";
 }
 
 async function draftControlFlow(lobby, socket) {
     while(lobby.order[lobby.onClock] == 'CPU') {
         let selection = await cpuselection(lobby.draftid);
         //TODO: maintain list of socket connections and emit to only those in draft draftid
-        socket.broadcast.emit('selection', {
+        //we can do this using rooms for each draft
+        io.emit('selection', {
             player: selection,
-            draftid: lobby.draftid,
+            draftid: lobby,
         })
         //TODO: update logic for end of round snaking
         lobby.onClock++
@@ -98,37 +122,66 @@ async function draftControlFlow(lobby, socket) {
 
     //current on clock is a user, notify them with a socket message
     let nextDrafter = connections[lobby.order[lobby.onClock]];
-    nextDrafter.send({
-        message: 'on-the-clock'
-    });
+    //TODO: this maybe needs to be changed
+    // console.log(nextDrafter);
+    io.emit('on-the-clock', {user: nextDrafter.handshake.auth.userId});
+    // nextDrafter.send({
+    //     message: 'on-the-clock'
+    // });
 
 }
 
+io.use((socket, next) => {
+    const draftPosition = socket.handshake.auth.draftPosition;
+    if (draftPosition != null) {
+        console.log(`connected with draft position ${draftPosition}`);
+    } else {
+        console.log('connected with no draft position');
+    }
+    next();
+})
+
+
+//TODO: add rooms to represent each draft
+//TODO: probably extract all the socket logic into a separate file and import the io object
 io.on('connection', (socket, req) => {
     //is lobby id specified in req? (dk if this is right syntax lol)
     //putting this in standalone function to modulate logic if I change from in-memory to db
-    handleNewLobbyConnection(req);
+    console.log("new socket connection came in");
+    console.log(socket);
+    handleNewLobbyConnection(socket.handshake.auth);
 
     //add to connections set
-    connections[req.userid] = socket;
+    connections[socket.handshake.auth.userId] = socket;
 
 
     //someone started the draft (will prolly be async eventually)
     socket.on('start-draft', async (data) => {
         //retrieve lobby info
-        let lobby = retrieveLobby(data.lobbyid);
+        let lobby = retrieveLobby(data.draftId);
 
         //begin draft control flow
         await draftControlFlow(lobby, socket);
 
     });
 
-    socket.on('selection', async (data) => {
-        //retrieve lobby info
-        let lobby = retrieveLobby(data.lobbyid);
+    // socket.on('selection', async (data) => {
+    //     //retrieve lobby info
+    //     let lobby = retrieveLobby(data.lobbyid);
 
-        //begin draft control flow
-        await draftControlFlow(lobby, socket);
+    //     //begin draft control flow
+    //     await draftControlFlow(lobby, socket);
+    // })
+
+    socket.on('test', (data) => {
+        console.log('test message came thru');
+    })
+
+    socket.on('disconnect', (reason) => {
+        //TODO: remove user from draft they were in
+        draftLobbies = {}
+        connection = {}
+        console.log('user disconnected');
     })
 
 })
@@ -144,11 +197,11 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // TODO: change origin to env variable for deployment
-app.use(
-    cors({
-      origin: "http://localhost:3000",
-      credentials: true,
-  }));
+// app.use(
+//     cors({
+//       origin: "http://localhost:3000",
+//       credentials: true,
+//   }));
 
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
@@ -168,5 +221,10 @@ app.use(function(err, req, res, next) {
   res.status(err.status || 500);
   res.render('error');
 });
+
+const port = process.env.PORT || 8000;
+http.listen(port, function() {
+    console.log(`Listening at port ${port}`);
+})
 
 module.exports = app;
