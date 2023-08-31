@@ -72,7 +72,10 @@ function initializeDraftLobby(data) {
     draftLobbies[data.draftId] = {
         users: [data.userId],
         order: Array.from({ length: data.teamCount }, (_, index) => index == data.draftPosition ? data.userId : `CPU`),
-        onClock: 0
+        //for now using super stupid impl for available players that just looks at index in client side player list
+        available: Array.from({length: 300}, (_, index) => index), //TODO: convert this to some sort of db access prolly
+        onClock: 0,
+        direction: 1 //forward
     };
 
     //TODO: create new room here? or return draftid so I can create room elsewhere
@@ -82,8 +85,8 @@ function initializeDraftLobby(data) {
 
 function addDrafterToLobby(data) {
     //TODO: make this actually do something right
-    draftLobbies[data.draftId]['users'].append(data.userId);
-    draftLobbies[data.draftId][order][data.draftPosition] = data.userId;
+    draftLobbies[data.draftId]['users'].push(data.userId);
+    draftLobbies[data.draftId]['order'][data.draftPosition] = data.userId;
 }
 
 function handleNewLobbyConnection(data) {
@@ -103,21 +106,52 @@ function retrieveLobby(lobbyid) {
     return draftLobbies[lobbyid];
 }
 
-async function cpuselection(draftid) {
-    return "TODO: implement";
+//TODO: have this fxn take advantage of the draft strategies I created and put in the
+//ff-mock-draft package
+async function cpuselection(lobby) {
+    //for now, just pick the first element
+    let selectionIndex = lobby.available[0];
+    lobby.available.splice(0, 1);
+    console.log("selecting player " + selectionIndex);
+    return selectionIndex;
 }
 
-async function draftControlFlow(lobby, socket) {
+function incrementOnClock(lobby) {
+    if ((lobby.onClock == lobby.order.length - 1 && lobby.direction > 0)
+            || (lobby.onClock == 0 && lobby.direction < 0)) {
+            
+            //swap directions, and the same team stays on the clock
+            //direction is -1 when doing backwards in order and 1 otherwise
+            lobby.direction *= -1;
+
+    } else {
+            // +1 in odd rounds, -1 in even rounds
+            lobby.onClock += lobby.direction; 
+    }
+}
+
+async function draftControlFlow(lobby, draftId, socket) {
     while(lobby.order[lobby.onClock] == 'CPU') {
-        let selection = await cpuselection(lobby.draftid);
+        let selection = await cpuselection(lobby);
         //TODO: maintain list of socket connections and emit to only those in draft draftid
         //we can do this using rooms for each draft
         io.emit('selection', {
             player: selection,
-            draftid: lobby,
+            draftId: draftId,
         })
         //TODO: update logic for end of round snaking
-        lobby.onClock++
+        // if ((lobby.onClock == lobby.order.length - 1 && lobby.direction > 0)
+        //     || (lobby.onClock == 0 && lobby.direction < 0)) {
+            
+        //     //swap directions, and the same team stays on the clock
+        //     //direction is -1 when doing backwards in order and 1 otherwise
+        //     lobby.direction *= -1;
+
+        // } else {
+        //     // +1 in odd rounds, -1 in even rounds
+        //     lobby.onClock += lobby.direction; 
+        // }
+        incrementOnClock(lobby);
     }
 
     //current on clock is a user, notify them with a socket message
@@ -128,6 +162,15 @@ async function draftControlFlow(lobby, socket) {
     // nextDrafter.send({
     //     message: 'on-the-clock'
     // });
+
+}
+
+//pick has come in from a user, reflect this information in the server side draft rep
+async function inputUserPick (lobby, playerId) {
+    let idx = lobby.available.indexOf(playerId);
+    lobby.available.splice(idx, 1);
+
+    incrementOnClock(lobby);
 
 }
 
@@ -161,17 +204,30 @@ io.on('connection', (socket, req) => {
         let lobby = retrieveLobby(data.draftId);
 
         //begin draft control flow
-        await draftControlFlow(lobby, socket);
+        await draftControlFlow(lobby, data.draftId, socket);
 
     });
 
-    // socket.on('selection', async (data) => {
-    //     //retrieve lobby info
-    //     let lobby = retrieveLobby(data.lobbyid);
+    socket.on('pick-made', async (data) => {
+        console.log("pick made handler");
+        //retrieve lobby info
+        let lobby = retrieveLobby(data.draftId);
 
-    //     //begin draft control flow
-    //     await draftControlFlow(lobby, socket);
-    // })
+        //reflect pick on server
+        await inputUserPick(lobby, data.playerId);
+
+        //communicate pick to other drafters in this lobby
+        //in theory this signal should look no different to a
+        //third party drafter than a cpu selection
+        //TODO: can you broadcast emit with rooms? probably
+        socket.broadcast.emit('selection', {
+            player: data.playerId,
+            draftId: data.draftId
+        })
+
+        //begin draft control flow
+        await draftControlFlow(lobby, data.draftId, socket);
+    })
 
     socket.on('test', (data) => {
         console.log('test message came thru');

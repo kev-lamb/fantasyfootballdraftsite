@@ -24,6 +24,38 @@ function Draft({teams, rounds}) {
     const [userTeam, setUserTeam] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
 
+    //queue of most reecent picks. need to use this because server can send in new picks
+    //faster than react can perform state changes w/ useeffects/rendering changes
+    //and we need to make sure we dont miss a pick
+    const [selectionQueue, setSelectionQueue] = useState([]);
+
+    /*
+    state used to protext state update overload when receiving a bunch of picks from
+    the server. When a pick is made by the client or relayed by the server, it first
+    adds the player to the selection queue. This triggers a cascading response of various
+    state updates, the last of which is the update of the rosters. When we begin the series
+    of state changes to make a pick, we set isUpdatingRosters to true. A change in the roster
+    state will trigger a useeffect that will set isUpdatingRosters to false.
+
+    If at any point we call the selectionQueue useeffect while isUpdatingRosters is true,
+    we wont do anything.
+    */
+    const [isUpdatingRosters, setIsUpdatingRosters] = useState(false);
+
+    useEffect(() => {
+        console.log("selection queue useeffect before initial check");
+        console.log(selectionQueue);
+        console.log(isUpdatingRosters);
+        if (selectionQueue.length == 0 || isUpdatingRosters) {
+            return;
+        }
+        let [selection, ...remainingQueue] = selectionQueue;
+        console.log("selection queue useeffect past initial check");
+        setIsUpdatingRosters(true);
+        draftPlayerByIndex(selection);
+        //setSelectionQueue(remainingQueue);
+    }, [selectionQueue, isUpdatingRosters])
+
     // let socket = io(`http://localhost:8000`);
     // socket.emit('test', {data: 'lol'});
     // console.log("bubbles");
@@ -64,6 +96,10 @@ function Draft({teams, rounds}) {
         }
     }, [selection])
 
+    //kindof an ass backwards way of doing this but its fine (draftplayer should prolly call this)
+    const draftPlayerByIndex = (index) => {
+        draftPlayer(players[index], index)
+    }
 
     const draftPlayer = (player, index) => {
         //make sure player can be drafted
@@ -80,6 +116,12 @@ function Draft({teams, rounds}) {
         // indicate that this player has been drafted via record
         setSelection(player);
 
+    }
+
+    function userDraftPlayer (player, index) {
+        setSelectionQueue(q => [...q, index]);
+        //relay pick back to server
+        socket.emit('pick-made', {playerId: index, draftId: 1});
     }
 
     const teamOnClock = (pick) => {
@@ -107,6 +149,15 @@ function Draft({teams, rounds}) {
         
 
     }, [nextPick]);
+
+    useEffect(() => {
+        //we just performed the final step of updating the rosters, so were good to go
+        //with processing more picks in the selection queue now.
+        //this state change will unblock the selection queue useeffect
+        console.log("unblock roster updater");
+        setSelectionQueue(q => q.filter((_, i) => i !== 0));
+        setIsUpdatingRosters(false);
+    }, [rosters])
 
     const draftNotOver = () => {
         return nextPick < teams * rounds;
@@ -145,7 +196,10 @@ function Draft({teams, rounds}) {
             setIsConnected(true);
         })
         socket.on('selection', (data) => {
-            console.log(`${data.selection} was selected in draft ${data.draftId}`);
+            console.log(`${data.player} was selected in draft ${data.draftId}`);
+            //draftPlayerByIndex(data.player); //for now only getting the index of player in list
+            setSelectionQueue(q => [...q, data.player]);
+
         })
 
         socket.on('on-the-clock', (data) => {
@@ -203,39 +257,41 @@ function Draft({teams, rounds}) {
     Think i need to handle the cpu selection stuff on roster state change instead of pick number actually
     cuz I want to send updated roster info to server and async state change wont have happened yet if i handle
     it w pick number change. Thisll matter for CPUs picking at the turn
+
+    No im using sockets now instead of normal http reqs
     */
-    useEffect(() => {
-        const requestCPUPick = async (team, roster) => {
+    // useEffect(() => {
+    //     const requestCPUPick = async (team, roster) => {
 
-            let info = {
-                available: 'hehehe', // players.filter(player => !player.hasOwnProperty('drafted') || !player.drafted),
-                team: team,
-                roster: roster
-            };
+    //         let info = {
+    //             available: 'hehehe', // players.filter(player => !player.hasOwnProperty('drafted') || !player.drafted),
+    //             team: team,
+    //             roster: roster
+    //         };
 
-            let url = new URL(`${API_URL}/draft`);
-            fetch(url, {
-                method: 'POST',
-                credentials: "include",
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(info)
-            }).then(res => res.json())
-            .then(res => {
-                console.log(res);
-            })
-        }
+    //         let url = new URL(`${API_URL}/draft`);
+    //         fetch(url, {
+    //             method: 'POST',
+    //             credentials: "include",
+    //             headers: {
+    //                 'Content-Type': 'application/json',
+    //             },
+    //             body: JSON.stringify(info)
+    //         }).then(res => res.json())
+    //         .then(res => {
+    //             console.log(res);
+    //         })
+    //     }
 
-        //check if the next team to draft is a user team or a CPU
-        let otc = teamOnClock(nextPick+1);
-        if (otc != userTeam) {
-            //CPU picking, send request
-            requestCPUPick(otc, rosters[otc]);
+    //     //check if the next team to draft is a user team or a CPU
+    //     let otc = teamOnClock(nextPick+1);
+    //     if (otc != userTeam) {
+    //         //CPU picking, send request
+    //         requestCPUPick(otc, rosters[otc]);
 
-        }
+    //     }
 
-    }, [rosters])
+    // }, [rosters])
 
 
     return (
@@ -261,7 +317,7 @@ function Draft({teams, rounds}) {
                 setUserTeam={setUserTeam}
                 style={{flex:60}}
             />
-            <Players draftPlayer={draftPlayer} players={players} style={{flex:40}}/>
+            <Players draftPlayer={userDraftPlayer} players={players} style={{flex:40}}/>
         </div>
     )
 }
